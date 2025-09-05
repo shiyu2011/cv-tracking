@@ -11,4 +11,4 @@ D: !!opencv-matrix
    cols: 5
    dt: d
    data: [0.0, 0.0, 0.0, 0.0, 0.0]
-
+baseline: 0.0595549   # meters (ETH3D gives mm; divide by 1000)

@@ -14,12 +14,13 @@ def load_intrinsic(calib_path):
     
     K = fs.getNode("K").mat()
     D = fs.getNode("D").mat()
+    baseline = fs.getNode("baseline").real()   # <-- read scalar
     fs.release()
     if K is None:
         raise RuntimeError("Intrinsic matrix K not found in the calibration file.")
     if D is None:
         D = np.zeros((5, 1))
-    return K, D
+    return K, D, baseline
 
 def detect_and_match(img1, img2, max_feats=2000, ratio=0.75):
     orb = cv2.ORB_create(nfeatures=max_feats)
@@ -109,7 +110,6 @@ def main():
     ap.add_argument("--left", type=str, default="./playground_1l/im0.png", help="Left image path")
     ap.add_argument("--right", type=str, default="./playground_1l/im1.png", help="Right image path (for stereo and mono)")
     ap.add_argument("--calib", type=str, default="./playground_1l/calib.yaml", help="Calibration file path (YAML)")
-    ap.add_argument("--baseline", type=float, default=0.1, help="Baseline in meters (for stereo)")
     ap.add_argument("--show", default=False, action="store_true", help="Show the result")
     args = ap.parse_args()
     
@@ -118,12 +118,12 @@ def main():
     if imgL is None or imgR is None:
         raise FileNotFoundError(f"Failed to load images.")
     
-    K, D = load_intrinsic(args.calib)
-    
+    K, D, basline = load_intrinsic(args.calib)
+    print(f"Loaded K:\n{K}\nD:\n{D}\nBaseline: {basline}")
     if args.mode == "stereo":
-        if args.baseline is None:
+        if basline is None or basline <= 0:
             raise ValueError("Baseline must be provided for stereo mode.")
-        vis = run_stereo(imgL, imgR, K, D, args.baseline)
+        vis = run_stereo(imgL, imgR, K, D, basline)
     else:
         vis = run_mono(imgL, imgR, K, D)
         
