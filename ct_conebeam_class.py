@@ -11,6 +11,8 @@
 from __future__ import annotations
 import numpy as np
 from typing import Tuple, Optional
+from skimage.data import shepp_logan_phantom
+from skimage.transform import resize
 
 class CTProjector:
     def __init__(self,
@@ -328,6 +330,13 @@ class CTProjector:
                     u = p[0]/p[2]; v = p[1]/p[2]
                     vol[z, y, x] += self._bilinear(proj, u, v)
         return vol
+    
+    @staticmethod
+    def shepp_logan_3d(nx: int, ny: int, nz: int) -> np.ndarray:
+        phantom = shepp_logan_phantom()
+        phantom_3d = np.stack([phantom]*nz, axis=0)
+        phantom_3d = resize(phantom_3d, (nz, ny, nx), order=1, mode='constant', cval=0.0, anti_aliasing=True)
+        return phantom_3d.astype(np.float32)
 
 
 # ------------------- One-angle quick test -------------------
@@ -335,7 +344,7 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Small phantom (cube) to keep runtime fast
-    Nx = Ny = 48
+    Nx = Ny = 128
     Nz = 32
     nu = nv = 96
     vox = 1.0
@@ -345,12 +354,17 @@ if __name__ == "__main__":
     angle = np.deg2rad(angle_deg)
 
     # Build phantom
-    vol = np.zeros((Nz, Ny, Nx), dtype=np.float32)
-    vol[Nz//2-5:Nz//2+5, Ny//2-10:Ny//2+10, Nx//2-10:Nx//2+10] = 1.0
+    # vol = np.zeros((Nz, Ny, Nx), dtype=np.float32)
+    # vol[Nz//2-5:Nz//2+5, Ny//2-10:Ny//2+10, Nx//2-10:Nx//2+10] = 1.0
+    
+    
+    
 
     # Projector
     ct = CTProjector(nu, nv, det_w, det_h, SID, SDD, beam_axis="y",
                      use_lookat=True, voxel_size_mm=vox)
+    
+    vol = ct.shepp_logan_3d(nx=Nx, ny=Ny, nz=Nz)
 
     # Ray-driven forward/back
     proj_ray = ct.forward_ray(vol, angle, step_mm=0.75*vox)
