@@ -1,0 +1,14 @@
+%YAML:1.0
+K: !!opencv-matrix
+   rows: 3
+   cols: 3
+   dt: d
+   data: [542.019, 0.0, 541.836,
+          0.0, 542.019, 255.198,
+          0.0, 0.0, 1.0]
+D: !!opencv-matrix
+   rows: 1
+   cols: 5
+   dt: d
+   data: [0.0, 0.0, 0.0, 0.0, 0.0]
+baseline: 0.0595549   # meters (ETH3D gives mm; divide by 1000)

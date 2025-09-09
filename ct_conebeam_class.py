@@ -12,6 +12,9 @@ from __future__ import annotations
 import numpy as np
 from typing import Tuple, Optional
 
+from skimage.data import shepp_logan_phantom
+from skimage.transform import resize
+
 class CTProjector:
     def __init__(self,
                  nu: int, nv: int,
@@ -140,6 +143,7 @@ class CTProjector:
         scale = add_val / wsum
         for iv, iu, wgt in kept:
             img[iv, iu] += wgt * scale
+
     
     @staticmethod
     def world_to_index(Xw: np.ndarray, voxel_size_mm: float,
@@ -149,12 +153,14 @@ class CTProjector:
         zi = Xw[2] / voxel_size_mm + (vol_shape[0]-1)/2.0
         return np.array([xi, yi, zi], dtype=np.float32)
 
+
     @staticmethod
     def _sample_trilinear(vol: np.ndarray, Xw: np.ndarray,
                           voxel_size_mm: float,
                           cx: float, cy: float, cz: float) -> float:
         Nz, Ny, Nx = vol.shape
         [xf, yf, zf] = CTProjector.world_to_index(Xw, voxel_size_mm, vol.shape)
+
         if xf < 0 or xf > Nx-1 or yf < 0 or yf > Ny-1 or zf < 0 or zf > Nz-1:
             return 0.0
         x0 = int(np.floor(xf)); x1 = min(x0+1, Nx-1)
@@ -175,6 +181,7 @@ class CTProjector:
                              voxel_size_mm: float, cx: float, cy: float, cz: float):
         Nz, Ny, Nx = vol.shape
         [xf, yf, zf] = CTProjector.world_to_index(Xw, voxel_size_mm, vol.shape)
+
         if xf < -1 or xf > Nx or yf < -1 or yf > Ny or zf < -1 or zf > Nz:
             return
         x0 = int(np.floor(xf)); x1 = x0 + 1
@@ -280,6 +287,7 @@ class CTProjector:
                 if count == 0: continue
                 w = val / count #along ray weight, to make sure integral is correct
 
+
                 # pass 2: trilinear splat
                 s = 0.0
                 while s <= s_max_mm:
@@ -296,6 +304,7 @@ class CTProjector:
         yw = (yi - (vol_shape[1]-1)/2.0) * voxel_size_mm
         zw = (zi - (vol_shape[0]-1)/2.0) * voxel_size_mm
         return np.array([xw, yw, zw], dtype=np.float32)
+
 
     # ---------- Voxel-driven (scatter/gather) ----------
     def forward_voxel(self, volume: np.ndarray, angle_rad: float) -> np.ndarray:
@@ -333,13 +342,22 @@ class CTProjector:
                     vol[z, y, x] += self._bilinear(proj, u, v)
         return vol
 
+    
+    @staticmethod
+    def shepp_logan_3d(nx: int, ny: int, nz: int) -> np.ndarray:
+        phantom = shepp_logan_phantom()
+        phantom_3d = np.stack([phantom]*nz, axis=0)
+        phantom_3d = resize(phantom_3d, (nz, ny, nx), order=1, mode='constant', cval=0.0, anti_aliasing=True)
+        return phantom_3d.astype(np.float32)
+
 
 # ------------------- One-angle quick test -------------------
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
     # Small phantom (cube) to keep runtime fast
-    Nx = Ny = 48
+
+    Nx = Ny = 128
     Nz = 32
     nu = nv = 96
     vox = 1.0
@@ -349,12 +367,12 @@ if __name__ == "__main__":
     angle = np.deg2rad(angle_deg)
 
     # Build phantom
-    vol = np.zeros((Nz, Ny, Nx), dtype=np.float32)
-    vol[Nz//2-5:Nz//2+5, Ny//2-10:Ny//2+10, Nx//2-10:Nx//2+10] = 1.0
 
     # Projector
     ct = CTProjector(nu, nv, det_w, det_h, SID, SDD, beam_axis="y",
                      use_lookat=True, voxel_size_mm=vox)
+    
+    vol = ct.shepp_logan_3d(nx=Nx, ny=Ny, nz=Nz)
 
     # Ray-driven forward/back
     proj_ray = ct.forward_ray(vol, angle, step_mm=0.75*vox)
@@ -380,4 +398,6 @@ if __name__ == "__main__":
     axs[1,2].imshow(recon_vox[midz], cmap="gray"); axs[1,2].set_title("Backproj (voxel)")
     for ax in axs.ravel(): ax.axis("off")
     plt.tight_layout()
-    plt.show()
+
+    plt.savefig("ct_conebeam_test.png", dpi=150)
+    plt.close()
