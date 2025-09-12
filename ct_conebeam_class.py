@@ -241,7 +241,41 @@ class CTProjector:
                     acc += self._sample_trilinear(volume, Xw, self.vox, cx, cy, cz) #accumulate along ray
                     s += step_mm #accumlate the length
                 proj[iv, iu] = acc * step_mm #this is the integral along the ray from exp(-mu*ds)
-        return proj
+        return 
+    
+    def fword_ray_cuda(self, volume:np.ndarray, angle_rad: float,
+                       step_mm: float = None) -> np.ndarray:
+        Nz, Ny, Nx = Volume.shape
+        vox = self.vox
+        
+        if step_mm is None:
+            step_mm = 0.75 * vox
+            
+        #build extrinsic
+        extr = self.build_extrinsic(angle_rad)
+        Rwc = extr[:, :3].astype(np.float32) #word to camera rotation 3x3
+        t = extr[:, 3].astype(np.float32) #translation 3x1
+        
+        #Torch tensors on GPU
+        vol_t = torch.from_numpy(volume).to(device='cuda', dtype=torch.float32).contiguous()
+        img_t = torch.zeros((self.nv, self.nu), device='cuda', dtype=torch.float32).contiguous()
+        
+        Kinv_t = torch.from_numpy(self.Kinv).to(device='cuda', dtype=torch.float32).contiguous()
+        Rwc_t = torch.from_numpy(Rwc).to(device='cuda', dtype=torch.float32).contiguous()
+        t_t = torch.from_numpy(t).to(device='cuda', dtype=torch.float32).contiguous()
+        
+        #origin: voxel index (0 0 0) to world coord mm 
+        oxi, oyi, ozi = 0.0, 0.0, 0.0
+        ox, oy, oz = self.index_to_world(oxi, oyi, ozi, vox, volume.shape).astype(np.float32)
+        
+        fwd_ext.forward_project_intr_extr(
+            img_t, vol_t,
+            Nx, Ny, Nz,
+            vox, vox, vox,
+            ox, oy, oz,
+            Kinv_t, Rwc_t, t_t,
+        )
+        return img_t.cpu().numpy()
 
     def backproject_ray_into(self, vol_shape: Tuple[int,int,int], proj: np.ndarray, angle_rad: float,
                              step_mm: Optional[float]=None, s_max_mm: Optional[float]=None) -> np.ndarray:
@@ -349,8 +383,18 @@ class CTProjector:
         phantom_3d = np.stack([phantom]*nz, axis=0)
         phantom_3d = resize(phantom_3d, (nz, ny, nx), order=1, mode='constant', cval=0.0, anti_aliasing=True)
         return phantom_3d.astype(np.float32)
+    
+    
 
 
+import torch
+from torch.utils.cpp_extension import load
+#Compile Cuda Extension (only once, cached afterwards)
+fwd_ext = load(
+    name="fwd_intr_extr.cu",
+    extra_cuda_cflags=['--use_fast_math', "-O3"],
+    verbose=True
+)
 # ------------------- One-angle quick test -------------------
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
@@ -375,7 +419,23 @@ if __name__ == "__main__":
     vol = ct.shepp_logan_3d(nx=Nx, ny=Ny, nz=Nz)
 
     # Ray-driven forward/back
+    # profile the run time of forward_ray and fword_ray_cuda
+    
+    import time
+    start = time.time()
     proj_ray = ct.forward_ray(vol, angle, step_mm=0.75*vox)
+    end = time.time()
+    cpuT = end - start
+    print("forward_ray time in cpu: ", cpuT)
+    
+    start = time.time()
+    proj_ray_cuda = ct.fword_ray_cuda(vol, angle, step_mm=0.75*vox)
+    end = time.time()
+    gpuT = end - start
+    print("fword_ray_cuda time in gpu: ", gpuT)
+    
+    
+    
     recon_ray = ct.backproject_ray_into(vol.shape, proj_ray, angle, step_mm=0.75*vox)
 
     # Voxel-driven forward/back
@@ -389,13 +449,15 @@ if __name__ == "__main__":
 
     # Visualize middle z-slice
     midz = Nz//2
-    fig, axs = plt.subplots(2, 3, figsize=(12, 8))
+    fig, axs = plt.subplots(2, 4, figsize=(12, 8))
     axs[0,0].imshow(vol[midz], cmap="gray"); axs[0,0].set_title("Phantom z-slice")
-    axs[0,1].imshow(proj_ray, cmap="gray");  axs[0,1].set_title("Proj (ray)")
-    axs[0,2].imshow(recon_ray[midz], cmap="gray"); axs[0,2].set_title("Backproj (ray)")
+    axs[0,1].imshow(proj_ray, cmap="gray");  axs[0,1].set_title("Proj (ray), time: {:.2f}s".format(cpuT))
+    axs[0,2].imshow(proj_ray_cuda, cmap="gray", alpha=0.5);  axs[0,1].set_title("Proj (ray+cuda), time: {:.2f}s".format(gpuT))
+    axs[0,3].imshow(recon_ray[midz], cmap="gray"); axs[0,2].set_title("Backproj (ray)")
     axs[1,0].imshow(vol[midz], cmap="gray"); axs[1,0].set_title("Phantom (repeat)")
     axs[1,1].imshow(proj_vox, cmap="gray");  axs[1,1].set_title("Proj (voxel)")
-    axs[1,2].imshow(recon_vox[midz], cmap="gray"); axs[1,2].set_title("Backproj (voxel)")
+    axs[1,2].imshow(proj_vox, cmap="gray");  axs[1,2].set_title("Proj (voxel) (repeat)")
+    axs[1,3].imshow(recon_vox[midz], cmap="gray"); axs[1,2].set_title("Backproj (voxel)")
     for ax in axs.ravel(): ax.axis("off")
     plt.tight_layout()
 
