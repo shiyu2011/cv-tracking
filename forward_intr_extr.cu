@@ -16,7 +16,7 @@ __device__ __forceinline__ float tri_sample(const float* __restrict__ vol, int N
     float dx = x - float(x0), dy = y - float(y0), dz = z - float(z0);
     auto at=[&](int xx, int yy, int zz){
         return vol[(size_t)zz*Nx*Ny + (size_t)yy*Nx + (size_t)xx];
-    }
+    };
     float c000 = at(x0, y0, z0);
     float c100 = at(x1, y0, z0);
     float c010 = at(x0, y1, z0);
@@ -41,36 +41,36 @@ __device__ __forceinline__ bool ray_box_intersect(float3 originalIdx, float3 dir
     float3 t1 = make_float3((Nx-originalIdx.x)*inv.x, (Ny-originalIdx.y)*inv.y, (Nz-originalIdx.z)*inv.z); //distance from source to higher planes (x y z)
     float3 tSmall = make_float3(fminf(t0.x, t1.x), fminf(t0.y, t1.y), fminf(t0.z, t1.z));
     float3 tBig = make_float3(fmaxf(t0.x, t1.x), fmaxf(t0.y, t1.y), fmaxf(t0.z, t1.z));
-    tmin = fmaxf((fmaxf(tSmall.x, tSmall.y), fmax(tSmall.z, 0.f))); //we only care about the rays in front of the source
+    tmin = fmaxf(fmaxf(tSmall.x, tSmall.y), fmax(tSmall.z, 0.f)); //we only care about the rays in front of the source
     tmax = fminf(fminf(tBig.x, tBig.y), tBig.z);
     return tmax > tmin; // tmin and tmax are in mm
 }
 
 __device__ __forceinline__ float3 mat3_mul_vec3(const float M[9], const float3 &v){
     return make_float3(
-        fmaf(M[0], v.x, fmaf(M[1], v,y, fmaf(M[2], v.z, 0.f))),
-        fmaf(M[3], v.x, fmaf(M[4], v,y, fmaf(M[5], v.z, 0.f))),
-        fmaf(M[6], v.x, fmaf(M[7], v,y, fmaf(M[8], v.z, 0.f)))
+        fmaf(M[0], v.x, fmaf(M[1], v.y, fmaf(M[2], v.z, 0.f))),
+        fmaf(M[3], v.x, fmaf(M[4], v.y, fmaf(M[5], v.z, 0.f))),
+        fmaf(M[6], v.x, fmaf(M[7], v.y, fmaf(M[8], v.z, 0.f)))
     );
 }
 
-__device__ __forceinline__ float3 normlize3(const float3 &v){
+__device__ __forceinline__ float3 normalize3(const float3 &v){
     float len = sqrtf(v.x*v.x + v.y*v.y + v.z*v.z);
     return make_float3(v.x/len, v.y/len, v.z/len);
 }
 
 __device__ __forceinline__ float3 mat3T_mul_vec3(const float M[9], const float3 &v){
     return make_float3(
-        fmaf(M[0], v.x, fmaf(M[3], v,y, fmaf(M[6], v.z, 0.f))),
-        fmaf(M[1], v.x, fmaf(M[4], v,y, fmaf(M[7], v.z, 0.f))),
-        fmaf(M[2], v.x, fmaf(M[5], v,y, fmaf(M[8], v.z, 0.f)))
+        fmaf(M[0], v.x, fmaf(M[3], v.y, fmaf(M[6], v.z, 0.f))),
+        fmaf(M[1], v.x, fmaf(M[4], v.y, fmaf(M[7], v.z, 0.f))),
+        fmaf(M[2], v.x, fmaf(M[5], v.y, fmaf(M[8], v.z, 0.f)))
     );
 }
 
 __global__ void forward_project_intr_extr_kernel(const float* __restrict__ vol, int Nx, int Ny, int Nz, float vx, float vy, float vz, float ox, float oy, float oz,
-                                                const float * __restrict__Kinv,
-                                                const float * __restrict__Rwc,
-                                                const float * __restrict__t,
+                                                const float * __restrict__ Kinv,
+                                                const float * __restrict__ Rwc,
+                                                const float * __restrict__ t,
                                                 float * __restrict__ img, int H, int W, float step_mm){
     // Cache per-view matrices once per block (or use __constant__ if one view per launch)
     __shared__ float Kinv_s[9], Rwc_s[9], t_s[3];
@@ -111,7 +111,7 @@ __global__ void forward_project_intr_extr_kernel(const float* __restrict__ vol, 
 
     float tmin, tmax;
     if (!ray_box_intersect(originalIdx, dirIdx, tmin, tmax, float(Nx), float(Ny), float(Nz))){
-        img((size_t)v*W + (size_t)u) = 0.f;
+        img[(size_t)v*W + (size_t)u] = 0.f;
         return;
     }
 
@@ -132,7 +132,7 @@ __global__ void forward_project_intr_extr_kernel(const float* __restrict__ vol, 
 
 // ByBind launcher
 
-static inline void check_cuda_float*const torch::Tensor& t, const char* name){
+static inline void check_cuda_float(const torch::Tensor& t, const char* name){
     TORCH_CHECK(t.is_cuda(), "%s must be CUDA tensor", name);
     TORCH_CHECK(t.scalar_type() == at::kFloat, "%s must be float32 tensor", name);
     TORCH_CHECK(t.is_contiguous(), "%s must be contiguous tensor", name);
@@ -161,7 +161,7 @@ void forward_project_intr_extr(
     int H = img.size(0), W = img.size(1);
     dim3 block(16, 16); //each block has 16*16 threads
     dim3 grid((W+block.x-1)/block.x, (H+block.y-1)/block.y); //number of blocks needed
-    forward_project_intr_extr<<<grid, block>>>(
+    forward_project_intr_extr_kernel<<<grid, block>>>(
         vol.data_ptr<float>(),
         Nx, Ny, Nz,
         vx, vy, vz,
@@ -173,10 +173,10 @@ void forward_project_intr_extr(
         H, W,
         step_mm
     );
-    CHUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaGetLastError());
 }
 
-PYBIND11_MODULE(TORCH_EXXTENSION_NAME, m){
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m){
     m.def("forward_project_intr_extr", &forward_project_intr_extr, "Forward projection with intrinsic and extrinsic parameters (CUDA)");
 }
 

@@ -394,7 +394,7 @@ from torch.utils.cpp_extension import load
 #Compile Cuda Extension (only once, cached afterwards)
 fwd_ext = load(
     name="fwd_intr_extr_ext",
-    sources=["fwd_project_intr_extr.cu"],
+    sources=["forward_intr_extr.cu"],
     extra_cuda_cflags=['--use_fast_math', "-O3"],
     verbose=True
 )
