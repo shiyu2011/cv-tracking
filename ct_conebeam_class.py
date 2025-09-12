@@ -244,7 +244,7 @@ class CTProjector:
         return proj
     
     # GPU Cuda accelerated version of forward_ray
-    def foward_ray_cuda(self, volume:np.ndarray, angle_rad: float,
+    def forward_ray_cuda(self, volume:np.ndarray, angle_rad: float,
                        step_mm: float = None) -> np.ndarray:
         Nz, Ny, Nx = volume.shape
         vox = self.vox
@@ -433,7 +433,7 @@ if __name__ == "__main__":
     
     torch.cuda.synchronize()
     start = time.time()
-    proj_ray_cuda = ct.fword_ray_cuda(vol, angle, step_mm=0.75*vox)
+    proj_ray_cuda = ct.forward_ray_cuda(vol, angle, step_mm=0.75*vox)
     end = time.time()
     torch.cuda.synchronize()
     gpuT = end - start
@@ -457,14 +457,14 @@ if __name__ == "__main__":
     fig, axs = plt.subplots(2, 4, figsize=(12, 8))
     axs[0,0].imshow(vol[midz], cmap="gray"); axs[0,0].set_title("Phantom z-slice")
     axs[0,1].imshow(proj_ray, cmap="gray");       axs[0,1].set_title(f"Proj (ray)  {cpuT:.2f}s")
-    axs[0,2].imshow(proj_ray_cuda, cmap="gray");  axs[0,2].set_title(f"Proj (CUDA) {gpuT:.2f}s")
+    axs[0,2].imshow(proj_ray_cuda, cmap="gray");  axs[0,2].set_title(f"Proj (ray + CUDA) {gpuT:.2f}s")
     axs[0,3].imshow(recon_ray[midz], cmap="gray");axs[0,3].set_title("Backproj (ray)")
 
     
     axs[1,0].imshow(vol[midz], cmap="gray"); axs[1,0].set_title("Phantom (repeat)")
     axs[1,1].imshow(proj_vox, cmap="gray");  axs[1,1].set_title("Proj (voxel)")
     axs[1,2].imshow(proj_vox, cmap="gray");  axs[1,2].set_title("Proj (voxel) (repeat)")
-    axs[1,3].imshow(recon_vox[midz], cmap="gray"); axs[1,2].set_title("Backproj (voxel)")
+    axs[1,3].imshow(recon_vox[midz], cmap="gray"); axs[1,3].set_title("Backproj (voxel)")
     for ax in axs.ravel(): ax.axis("off")
     plt.tight_layout()
 
