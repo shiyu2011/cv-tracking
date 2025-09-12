@@ -241,11 +241,12 @@ class CTProjector:
                     acc += self._sample_trilinear(volume, Xw, self.vox, cx, cy, cz) #accumulate along ray
                     s += step_mm #accumlate the length
                 proj[iv, iu] = acc * step_mm #this is the integral along the ray from exp(-mu*ds)
-        return 
+        return proj
     
-    def fword_ray_cuda(self, volume:np.ndarray, angle_rad: float,
+    # GPU Cuda accelerated version of forward_ray
+    def foward_ray_cuda(self, volume:np.ndarray, angle_rad: float,
                        step_mm: float = None) -> np.ndarray:
-        Nz, Ny, Nx = Volume.shape
+        Nz, Ny, Nx = volume.shape
         vox = self.vox
         
         if step_mm is None:
@@ -266,7 +267,7 @@ class CTProjector:
         
         #origin: voxel index (0 0 0) to world coord mm 
         oxi, oyi, ozi = 0.0, 0.0, 0.0
-        ox, oy, oz = self.index_to_world(oxi, oyi, ozi, vox, volume.shape).astype(np.float32)
+        ox, oy, oz = self.index_to_world(oxi, oyi, ozi, vox, volume.shape)
         
         fwd_ext.forward_project_intr_extr(
             img_t, vol_t,
@@ -274,6 +275,7 @@ class CTProjector:
             vox, vox, vox,
             ox, oy, oz,
             Kinv_t, Rwc_t, t_t,
+            step_mm
         )
         return img_t.cpu().numpy()
 
@@ -391,7 +393,8 @@ import torch
 from torch.utils.cpp_extension import load
 #Compile Cuda Extension (only once, cached afterwards)
 fwd_ext = load(
-    name="fwd_intr_extr.cu",
+    name="fwd_intr_extr_ext",
+    sources=["fwd_project_intr_extr.cu"],
     extra_cuda_cflags=['--use_fast_math', "-O3"],
     verbose=True
 )
@@ -428,9 +431,11 @@ if __name__ == "__main__":
     cpuT = end - start
     print("forward_ray time in cpu: ", cpuT)
     
+    torch.cuda.synchronize()
     start = time.time()
     proj_ray_cuda = ct.fword_ray_cuda(vol, angle, step_mm=0.75*vox)
     end = time.time()
+    torch.cuda.synchronize()
     gpuT = end - start
     print("fword_ray_cuda time in gpu: ", gpuT)
     
@@ -451,9 +456,11 @@ if __name__ == "__main__":
     midz = Nz//2
     fig, axs = plt.subplots(2, 4, figsize=(12, 8))
     axs[0,0].imshow(vol[midz], cmap="gray"); axs[0,0].set_title("Phantom z-slice")
-    axs[0,1].imshow(proj_ray, cmap="gray");  axs[0,1].set_title("Proj (ray), time: {:.2f}s".format(cpuT))
-    axs[0,2].imshow(proj_ray_cuda, cmap="gray", alpha=0.5);  axs[0,1].set_title("Proj (ray+cuda), time: {:.2f}s".format(gpuT))
-    axs[0,3].imshow(recon_ray[midz], cmap="gray"); axs[0,2].set_title("Backproj (ray)")
+    axs[0,1].imshow(proj_ray, cmap="gray");       axs[0,1].set_title(f"Proj (ray)  {cpuT:.2f}s")
+    axs[0,2].imshow(proj_ray_cuda, cmap="gray");  axs[0,2].set_title(f"Proj (CUDA) {gpuT:.2f}s")
+    axs[0,3].imshow(recon_ray[midz], cmap="gray");axs[0,3].set_title("Backproj (ray)")
+
+    
     axs[1,0].imshow(vol[midz], cmap="gray"); axs[1,0].set_title("Phantom (repeat)")
     axs[1,1].imshow(proj_vox, cmap="gray");  axs[1,1].set_title("Proj (voxel)")
     axs[1,2].imshow(proj_vox, cmap="gray");  axs[1,2].set_title("Proj (voxel) (repeat)")
