@@ -68,8 +68,8 @@ def run_stereo(imgL, imgR, K, D, baseline):
     #epipolar error check
     
     #projection matrices (rectified assumption)
-    P1 = K @ np.hstack([np.eye(3), np.zeros((3,1))])
-    P2 = K @ np.hstack([np.eye(3), np.array([[-baseline,0,0]]).T])
+    P1 = K @ np.hstack([np.eye(3), np.zeros((3,1))]) #left camera at origin as reference
+    P2 = K @ np.hstack([np.eye(3), np.array([[-baseline,0,0]]).T]) #right camera translated along x axis by baseline
     
     #Triangulate
     X = triangulate(P1, P2, ptsL, ptsR)
