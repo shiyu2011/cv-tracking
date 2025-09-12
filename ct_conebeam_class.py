@@ -456,8 +456,8 @@ if __name__ == "__main__":
     midz = Nz//2
     fig, axs = plt.subplots(2, 4, figsize=(12, 8))
     axs[0,0].imshow(vol[midz], cmap="gray"); axs[0,0].set_title("Phantom z-slice")
-    axs[0,1].imshow(proj_ray, cmap="gray");       axs[0,1].set_title(f"Proj (ray)  {cpuT:.2f}s")
-    axs[0,2].imshow(proj_ray_cuda, cmap="gray");  axs[0,2].set_title(f"Proj (ray + CUDA) {gpuT:.2f}s")
+    axs[0,1].imshow(proj_ray, cmap="gray");       axs[0,1].set_title(f"Proj (ray)  {cpuT:.4f}s")
+    axs[0,2].imshow(proj_ray_cuda, cmap="gray");  axs[0,2].set_title(f"Proj (ray + CUDA) {gpuT:.4f}s")
     axs[0,3].imshow(recon_ray[midz], cmap="gray");axs[0,3].set_title("Backproj (ray)")
 
     
